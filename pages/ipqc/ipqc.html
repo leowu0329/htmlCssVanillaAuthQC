@@ -1,28 +1,28 @@
 <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-3">
-    <h2><i class="bi bi-clipboard-check-fill text-primary me-2"></i>製程巡檢紀錄明細</h2>
+    <h2><i class="bi bi-clipboard-check-fill text-primary me-2"></i>製程巡檢紀錄明細 (IPQC)</h2>
     <span class="badge bg-secondary px-3 py-2"><i class="bi bi-building me-1"></i>現場第一製造組</span>
 </div>
 
-<div class="row g-3 align-items-center mb-4">
-    <div class="col-md-4">
+<div class="row g-3 align-items-center mb-4 bg-light p-3 rounded shadow-sm">
+    <div class="col-md-3">
         <div class="input-group">
-            <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
-            <input type="text" id="ipqc-search" class="form-control border-start-0" placeholder="關鍵字搜尋工單/品號/巡檢員...">
+            <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+            <input type="text" id="main-search" class="form-control" placeholder="關鍵字搜尋所有欄位...">
         </div>
     </div>
     <div class="col-md-4">
         <div class="input-group">
-            <span class="input-group-text bg-light small">日期起迄</span>
-            <input type="date" id="ipqc-date-start" class="form-control">
-            <span class="input-group-text bg-light border-start-0 border-end-0">~</span>
-            <input type="date" id="ipqc-date-end" class="form-control">
+            <span class="input-group-text bg-white">日期起迄</span>
+            <input type="date" id="main-date-start" class="form-control">
+            <span class="input-group-text bg-white">至</span>
+            <input type="date" id="main-date-end" class="form-control">
         </div>
     </div>
-    <div class="col-md-4 text-end">
-        <button class="btn btn-outline-success me-1" id="btn-export-excel"><i class="bi bi-download me-1"></i>匯出Excel</button>
-        <button class="btn btn-outline-warning me-1" id="btn-trigger-import"><i class="bi bi-upload me-1"></i>匯入Excel</button>
-        <input type="file" id="ipqc-excel-file" accept=".xlsx, .xls" class="d-none">
-        <button class="btn btn-primary" id="btn-add-ipqc"><i class="bi bi-plus-lg me-1"></i>新增紀錄</button>
+    <div class="col-md-5 text-end">
+        <button class="btn btn-outline-success me-1" id="btn-main-export"><i class="bi bi-file-earmark-excel me-1"></i>匯出Excel</button>
+        <button class="btn btn-outline-warning me-1" onclick="document.getElementById('main-excel-file').click()"><i class="bi bi-file-earmark-arrow-up me-1"></i>匯入Excel</button>
+        <input type="file" id="main-excel-file" accept=".xlsx, .xls" style="display: none;">
+        <button class="btn btn-primary" id="btn-main-add"><i class="bi bi-plus-circle-fill me-1"></i>新增紀錄</button>
     </div>
 </div>
 
@@ -30,14 +30,14 @@
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0" id="main-ipqc-table">
-                <thead class="table-light">
+                <thead class="table-dark">
                     <tr>
                         <th style="width: 110px;">日期</th>
                         <th>製令工單</th>
-                        <th>品號/品名/規格</th>
+                        <th>品號 / 品名 / 規格</th>
                         <th style="width: 80px;">數量</th>
-                        <th>巡檢員</th>
-                        <th style="width: 80px;">判定</th>
+                        <th style="width: 100px;">巡檢員</th>
+                        <th style="width: 90px;" class="text-center">判定</th>
                         <th>不良分類</th>
                         <th>不良狀況</th>
                         <th>處置措施</th>
@@ -45,7 +45,7 @@
                         <th style="width: 110px;" class="text-center">操作</th>
                     </tr>
                 </thead>
-                <tbody id="ipqc-main-list">
+                <tbody id="ipqc-main-tbody">
                     <tr>
                         <td colspan="11" class="text-center text-muted py-5">
                             <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
@@ -56,211 +56,188 @@
             </table>
         </div>
     </div>
-</div>
-
-<div class="d-flex justify-content-between align-items-center px-2">
-    <div class="text-muted small" id="ipqc-page-info">
-        共 0 筆，第 0~0 筆
+    <div class="card-footer bg-white d-flex justify-content-between align-items-center py-3">
+        <div id="main-pagination-info" class="text-muted small">共 0 筆，第 0~0 筆</div>
+        <nav>
+            <ul class="pagination pagination-sm mb-0" id="main-pagination-pages">
+                </ul>
+        </nav>
     </div>
-    <nav>
-        <ul class="pagination pagination-sm mb-0" id="ipqc-pagination">
-            </ul>
-    </nav>
 </div>
 
-<div class="modal fade" id="crudModal" data-bs-backdrop="static" tabindex="-1" aria-hidden="true">
+<div class="modal fade" id="ipqcCrudModal" data-bs-backdrop="static" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered">
-        <div class="modal-content border-0 shadow">
-            <div class="modal-header bg-light border-bottom pb-3">
-                <h5 class="modal-title fw-bold" id="crudModalTitle">新增巡檢紀錄</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title fw-bold" id="ipqcCrudModalTitle">新增巡檢紀錄</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form id="modal-ipqc-form">
-                <div class="modal-body p-4">
-                    <input type="hidden" id="form-id">
+            <form id="ipqc-crud-form">
+                <div class="modal-body px-4 py-3">
+                    <input type="hidden" id="field-id">
                     
                     <div class="row g-3 mb-3">
                         <div class="col-md-4">
                             <label class="form-label small fw-bold">日期</label>
-                            <input type="date" id="form-date" class="form-control form-control-sm" required>
+                            <input type="date" id="field-date" class="form-control" required>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label small fw-bold">時間</label>
-                            <input type="time" id="form-time" class="form-control form-control-sm" required>
+                            <input type="time" id="field-time" class="form-control" required>
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-4 position-relative">
                             <label class="form-label small fw-bold">製令工單</label>
-                            <div class="input-group input-group-sm position-relative">
-                                <input type="text" id="form-order-number" class="form-control" autocomplete="off" placeholder="輸入工單代入..." required>
-                                <button class="btn btn-outline-secondary" type="button" id="btn-sub-order"><i class="bi bi-plus-square"></i></button>
-                                <div id="autocomplete-list" class="autocomplete-suggestions d-none"></div>
+                            <div class="input-group">
+                                <input type="text" id="field-order_number" class="form-control" placeholder="輸入工單號碼自動補全..." autocomplete="off" required>
+                                <button class="btn btn-outline-secondary" type="button" id="btn-sub-order-mgr" title="管理工單清單"><i class="bi bi-plus-lg"></i></button>
                             </div>
+                            <ul class="dropdown-menu w-100 shadow" id="order-autocomplete-list" style="max-height: 220px; overflow-y: auto;"></ul>
                         </div>
                     </div>
 
                     <div class="row g-3 mb-3">
                         <div class="col-md-4">
                             <label class="form-label small fw-bold">品號</label>
-                            <input type="text" id="form-product-number" class="form-control form-control-sm" readonly>
+                            <input type="text" id="field-product_number" class="form-control bg-light" readonly placeholder="由工單自動帶入" required>
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-5">
                             <label class="form-label small fw-bold">品名</label>
-                            <input type="text" id="form-product-name" class="form-control form-control-sm" readonly>
+                            <input type="text" id="field-product_name" class="form-control bg-light" readonly placeholder="由工單自動帶入" required>
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <label class="form-label small fw-bold">數量</label>
-                            <input type="number" id="form-quantity" class="form-control form-control-sm" required>
+                            <input type="number" id="field-quantity" class="form-control bg-light" readonly placeholder="0" required>
                         </div>
                     </div>
 
                     <div class="row g-3 mb-3">
                         <div class="col-md-8">
                             <label class="form-label small fw-bold">規格</label>
-                            <div class="input-group input-group-sm">
-                                <input type="text" id="form-spec" class="form-control" placeholder="選擇或點選+管理" readonly>
-                                <button class="btn btn-outline-secondary" type="button" id="btn-sub-spec"><i class="bi bi-plus-square"></i></button>
+                            <div class="input-group">
+                                <input type="text" id="field-spec" class="form-control bg-light" readonly placeholder="由品號關聯自動帶入" required>
+                                <button class="btn btn-outline-secondary" type="button" id="btn-sub-spec-mgr" title="管理規格版本清單"><i class="bi bi-plus-lg"></i></button>
                             </div>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label small fw-bold">版次</label>
-                            <input type="text" id="form-draw-ver" class="form-control form-control-sm" readonly>
+                            <input type="text" id="field-draw_ver" class="form-control bg-light" readonly placeholder="由品號自動帶入" required>
                         </div>
                     </div>
 
                     <div class="row g-3 mb-3">
                         <div class="col-md-6">
                             <label class="form-label small fw-bold">作業員</label>
-                            <div class="input-group input-group-sm">
-                                <select id="form-operator" class="form-select"></select>
-                                <button class="btn btn-outline-secondary" type="button" id="btn-sub-operator"><i class="bi bi-plus-square"></i></button>
+                            <div class="input-group">
+                                <select id="field-operator" class="form-select" required></select>
+                                <button class="btn btn-outline-secondary" type="button" id="btn-sub-operator-mgr" title="管理作業員清單"><i class="bi bi-plus-lg"></i></button>
                             </div>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label small fw-bold">巡檢員</label>
-                            <select id="form-inspector" class="form-select form-select-sm" required></select>
+                            <select id="field-inspector" class="form-select" required></select>
                         </div>
                     </div>
 
                     <div class="row g-3 mb-3">
-                        <div class="col-md-6">
-                            <label class="form-label small fw-bold">判定</label>
-                            <select id="form-determination" class="form-select form-select-sm" style="cursor: pointer;">
-                                <option value="PASS" class="text-success fw-bold">PASS</option>
-                                <option value="FAIL" class="text-danger fw-bold">FAIL</option>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold">綜合判定</label>
+                            <select id="field-determination" class="form-select fw-bold" required>
+                                <option value="PASS" class="text-success">合格 (PASS)</option>
+                                <option value="FAIL" class="text-danger">不合格 (FAIL)</option>
                             </select>
                         </div>
-                        <div class="col-md-6">
+                        <div class="col-md-8">
                             <label class="form-label small fw-bold">不良分類</label>
-                            <div class="input-group input-group-sm">
-                                <select id="form-defect-classification" class="form-select"></select>
-                                <button class="btn btn-outline-secondary" type="button" id="btn-sub-defect"><i class="bi bi-plus-square"></i></button>
+                            <div class="input-group">
+                                <select id="field-defect_classification" class="form-select"></select>
+                                <button class="btn btn-outline-secondary" type="button" id="btn-sub-defect-mgr" title="管理不良分類清單"><i class="bi bi-plus-lg"></i></button>
                             </div>
                         </div>
                     </div>
 
-                    <div class="mb-3">
+                    <div class="mb-2">
                         <label class="form-label small fw-bold">不良狀況</label>
-                        <textarea id="form-defect-status" class="form-control form-control-sm" rows="2" placeholder="輸入細節狀態說明..."></textarea>
+                        <textarea id="field-defect_status" class="form-control" rows="1" placeholder="若有不良請輸入描述..."></textarea>
                     </div>
-
-                    <div class="mb-3">
+                    <div class="mb-2">
                         <label class="form-label small fw-bold">處置措施</label>
-                        <textarea id="form-handling-measures" class="form-control form-control-sm" rows="2" placeholder="輸入現場矯正與追蹤處置措施..."></textarea>
+                        <textarea id="field-handling_measures" class="form-control" rows="1" placeholder="請輸入處置措施..."></textarea>
                     </div>
-
-                    <div class="mb-0">
+                    <div class="mb-2">
                         <label class="form-label small fw-bold">備註</label>
-                        <textarea id="form-remark" class="form-control form-control-sm" rows="2"></textarea>
+                        <textarea id="field-remark" class="form-control" rows="1"></textarea>
                     </div>
                 </div>
-                <div class="modal-footer bg-light border-top">
-                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">取消</button>
-                    <button type="submit" class="btn btn-sm btn-primary px-3" id="btn-save-main">儲存</button>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary" id="btn-submit-main">儲存資料</button>
                 </div>
             </form>
         </div>
     </div>
 </div>
 
-<div class="modal fade shadow-lg" id="subTableModal" data-bs-backdrop="static" tabindex="-1" aria-hidden="true" style="background: rgba(0,0,0,0.35);">
+<div class="modal fade" id="subManagerModal" data-bs-backdrop="static" tabindex="-1" aria-hidden="true" style="z-index: 1060;">
     <div class="modal-dialog modal-lg modal-dialog-centered">
-        <div class="modal-content border-0 shadow">
-            <div class="modal-header bg-dark text-white py-2.5">
-                <h6 class="modal-title fw-bold" id="subModalTitle">子模組資料維護</h6>
-                <button type="button" class="btn-close btn-close-white" id="btn-close-sub"></button>
+        <div class="modal-content border-secondary shadow-lg">
+            <div class="modal-header bg-secondary text-white">
+                <h5 class="modal-title fw-bold" id="subManagerModalTitle">子表快速管理</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body p-3">
-                <div class="row g-2 align-items-center mb-3">
-                    <div class="col-md-4">
-                        <input type="text" id="sub-search" class="form-control form-control-sm" placeholder="搜尋此表關鍵字...">
+            <div class="modal-body px-4 py-3">
+                <div class="row g-2 mb-3">
+                    <div class="col-md-5">
+                        <input type="text" id="sub-search" class="form-control form-control-sm" placeholder="搜尋子表關鍵字...">
                     </div>
-                    <div class="col-md-8 text-end">
-                        <button class="btn btn-xs btn-outline-success me-1" id="btn-sub-export"><i class="bi bi-download"></i> 匯出</button>
-                        <button class="btn btn-xs btn-outline-warning me-1" id="btn-sub-trigger-import"><i class="bi bi-upload"></i> 匯入</button>
-                        <input type="file" id="sub-excel-file" class="d-none">
-                        <button class="btn btn-xs btn-primary" id="btn-sub-add-new"><i class="bi bi-plus-lg"></i> 新增數據</button>
+                    <div class="col-md-7 text-end">
+                        <button class="btn btn-sm btn-outline-success me-1" id="btn-sub-export"><i class="bi bi-file-earmark-excel"></i> 匯出</button>
+                        <button class="btn btn-sm btn-outline-warning me-1" onclick="document.getElementById('sub-excel-file').click()"><i class="bi bi-file-earmark-arrow-up"></i> 匯入</button>
+                        <input type="file" id="sub-excel-file" accept=".xlsx, .xls" style="display: none;">
+                        <button class="btn btn-sm btn-dark" id="btn-sub-add-form"><i class="bi bi-plus-circle"></i> 新增項目</button>
                     </div>
                 </div>
 
-                <div id="sub-form-block" class="card bg-light p-3 border-0 mb-3 d-none">
-                    <form id="sub-data-form">
-                        <div class="row g-2" id="sub-fields-container">
-                            </div>
-                        <div class="text-end mt-2">
-                            <button type="button" class="btn btn-xs btn-secondary" id="btn-sub-form-cancel">取消</button>
-                            <button type="submit" class="btn btn-xs btn-primary px-3">儲存資料</button>
+                <form id="sub-data-form" class="bg-light p-3 rounded mb-3 d-none border">
+                    <div class="fw-bold text-secondary mb-2 small" id="sub-form-title">編輯項目</div>
+                    <input type="hidden" id="sub-field-id">
+                    <div class="row g-2" id="sub-form-fields-container">
                         </div>
-                    </form>
-                </div>
+                    <div class="text-end mt-2">
+                        <button type="button" class="btn btn-xs btn-secondary py-1 px-2 small" id="btn-sub-form-cancel">取消</button>
+                        <button type="submit" class="btn btn-xs btn-primary py-1 px-2 small">儲存項目</button>
+                    </div>
+                </form>
 
-                <div class="table-responsive" style="max-height: 280px;">
-                    <table class="table table-sm table-hover align-middle border text-center mb-0" style="font-size: 0.85rem;">
-                        <thead class="table-secondary" id="sub-table-header">
-                            </thead>
-                        <tbody id="sub-table-body">
-                            </tbody>
+                <div class="table-responsive" style="max-height: 260px;">
+                    <table class="table table-sm table-striped table-hover align-middle mb-0">
+                        <thead class="table-secondary" id="sub-table-thead"></thead>
+                        <tbody id="sub-table-tbody"></tbody>
                     </table>
                 </div>
-
-                <div class="d-flex justify-content-between align-items-center mt-2 px-1">
-                    <div class="text-muted" style="font-size:0.75rem;" id="sub-page-info">共 0 筆</div>
-                    <nav><ul class="pagination pagination-xs mb-0" id="sub-pagination"></ul></nav>
-                </div>
+            </div>
+            <div class="modal-footer bg-light d-flex justify-content-between align-items-center py-2">
+                <div id="sub-pagination-info" class="text-muted small" style="font-size: 0.75rem;">共 0 筆</div>
+                <nav>
+                    <ul class="pagination pagination-sm mb-0" id="sub-pagination-pages"></ul>
+                </nav>
             </div>
         </div>
     </div>
 </div>
 
-<div class="modal fade" id="alertModal" tabindex="-1" aria-hidden="true" style="z-index: 1070;">
+<div class="modal fade" id="ipqcConfirmModal" tabindex="-1" aria-hidden="true" style="z-index: 1070;">
     <div class="modal-dialog modal-sm modal-dialog-centered">
-        <div class="modal-content border-0 shadow">
-            <div class="modal-header border-0 pb-0">
-                <h6 class="modal-title fw-bold" id="alertModalTitle">提示</h6>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        <div class="modal-content shadow-lg border-danger">
+            <div class="modal-header bg-danger text-white py-2">
+                <h6 class="modal-title fw-bold"><i class="bi bi-exclamation-triangle-fill me-2"></i>確認視窗</h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body py-3 text-secondary" id="alertModalBody">
-                系統訊息。
+            <div class="modal-body text-center py-3">
+                <p class="mb-0 fw-medium" id="confirmModalBodyText">您確定要執行此操作嗎？</p>
             </div>
-            <div class="modal-footer border-0 pt-0">
-                <button type="button" class="btn btn-sm btn-primary w-100" data-bs-dismiss="modal" id="btn-alert-confirm">確定</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="modal fade" id="confirmModal" data-bs-backdrop="static" tabindex="-1" aria-hidden="true" style="z-index: 1080;">
-    <div class="modal-dialog modal-sm modal-dialog-centered">
-        <div class="modal-content border-0 shadow">
-            <div class="modal-header border-0 pb-0">
-                <h6 class="modal-title fw-bold text-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i>確認刪除</h6>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body py-3 text-secondary" id="confirmModalBody">
-                您確定要刪除這筆紀錄嗎？此操作將無法還原。
-            </div>
-            <div class="modal-footer border-0 pt-0 d-flex justify-content-between">
-                <button type="button" class="btn btn-sm btn-secondary px-3" data-bs-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-sm btn-danger px-3" id="btn-confirm-delete">確定刪除</button>
+            <div class="modal-footer bg-light py-2">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-sm btn-danger" id="btn-confirm-execute">確定</button>
             </div>
         </div>
     </div>

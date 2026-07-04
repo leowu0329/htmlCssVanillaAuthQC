@@ -1,75 +1,46 @@
-/* IPQC 模組專屬進階視覺與佈局樣式 */
-#main-ipqc-table th {
-    font-weight: 600;
-    font-size: 0.9rem;
-    color: #495057;
-    background-color: #f8f9fa;
-    border-bottom: 2px solid #dee2e6;
-}
+/* pages/ipqc/ipqc.css */
 
-#main-ipqc-table td {
+/* 主表格排版微調 */
+#main-ipqc-table th, #main-ipqc-table td {
+    padding: 10px 8px;
     font-size: 0.88rem;
-    color: #333333;
+    vertical-align: middle;
 }
 
-/* 10個字元以上以...顯示，並在懸浮時呈現完整內容 */
+/* 針對超長字元進行 10 字截斷 */
 .text-ellipsis-10 {
-    max-width: 120px;
+    max-width: 130px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    cursor: help;
-}
-
-/* 逐字自動補全下拉選單樣式 */
-.autocomplete-suggestions {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    right: 0;
-    z-index: 1050;
-    background: #ffffff;
-    border: 1px solid #ced4da;
-    border-radius: 0.25rem;
-    max-height: 200px;
-    overflow-y: auto;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-}
-
-.autocomplete-suggestion {
-    padding: 8px 12px;
-    font-size: 0.85rem;
     cursor: pointer;
+}
+.text-ellipsis-10:hover {
+    color: #0d6efd;
+    text-decoration: underline;
+}
+
+/* 工單自動補全選單樣式 */
+#order-autocomplete-list {
+    z-index: 1065;
+}
+#order-autocomplete-list .dropdown-item {
+    font-size: 0.85rem;
+    padding: 6px 12px;
     border-bottom: 1px solid #f1f3f5;
 }
-
-.autocomplete-suggestion:last-child {
-    border-bottom: none;
-}
-
-.autocomplete-suggestion:hover {
+#order-autocomplete-list .dropdown-item:hover {
     background-color: #e9ecef;
-    color: #0d6efd;
 }
 
-/* 迷你按鈕規格，適用於子視窗 */
+/* 彈窗按鈕及輸入框微調 */
 .btn-xs {
-    padding: 0.25rem 0.4rem;
-    font-size: 0.75rem;
-    border-radius: 0.2rem;
+    padding: .2rem .4rem;
+    font-size: .75rem;
+    border-radius: .2rem;
 }
-
-.pagination-xs .page-link {
-    padding: 0.2rem 0.4rem;
-    font-size: 0.75rem;
-}
-
-/* 標題與輸入框適中字體設定 */
-#crudModal .form-label {
-    margin-bottom: 0.3rem;
-    color: #495057;
-}
-
-#crudModal .form-control, #crudModal .form-select {
-    font-size: 0.875rem;
+#ipqcCrudModal .form-control, 
+#ipqcCrudModal .form-select {
+    font-size: 0.9rem;
+    padding: 0.45rem 0.75rem;
 }

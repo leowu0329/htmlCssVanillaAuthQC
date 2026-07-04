@@ -1,758 +1,726 @@
+// pages/ipqc/ipqc.js
 import { getSupabase } from '../../core/db.js';
+import { ModalComponent } from '../../features/modal.js';
 import { FormatUtility } from '../../utils/utils.js';
 
-// 全域狀態管理
+// 主模組變數狀態
 let mainData = [];
 let filteredData = [];
-let currentPage = 1;
-const itemsPerPage = 10;
+let mainPage = 1;
+const mainPageSize = 10;
 
-// 當前操作的子模組名稱 (defect_list, order_list, operator_list, spec_list)
-let currentSubModule = '';
+// 子模組變數狀態
+let subCurrentTable = ''; // 'defect_list', 'order_list', 'operator_list', 'spec_list'
 let subData = [];
 let subFilteredData = [];
-let subCurrentPage = 1;
-const subItemsPerPage = 5;
+let subPage = 1;
+const subPageSize = 10;
+let subFormMode = 'add';
 
-// Bootstrap 實例物件
-let crudModalInstance = null;
-let subModalInstance = null;
-let alertModalInstance = null;
-let confirmModalInstance = null;
+// Bootstrap Modal 實例容器
+let bsMainModal = null;
+let bsSubModal = null;
+let bsConfirmModal = null;
+let confirmCallback = null;
 
-let onDeleteConfirmCallback = null;
-let currentUserNickname = "Leo Wu"; // 預設登入者暱稱
-
-export function init() {
-    console.log("全新巡檢明細系統初始化...");
+export async function init() {
+    console.log("IPQC 工作台初始化開始...");
     
-    // 初始化各 Bootstrap Modals 以防止 null 物件錯誤
-    crudModalInstance = new bootstrap.Modal(document.getElementById('crudModal'));
-    subModalInstance = new bootstrap.Modal(document.getElementById('subTableModal'));
-    alertModalInstance = new bootstrap.Modal(document.getElementById('alertModal'));
-    confirmModalInstance = new bootstrap.Modal(document.getElementById('confirmModal'));
+    // 初始化對應的所有 Modal 實例
+    bsMainModal = new bootstrap.Modal(document.getElementById('ipqcCrudModal'));
+    bsSubModal = new bootstrap.Modal(document.getElementById('subManagerModal'));
+    bsConfirmModal = new bootstrap.Modal(document.getElementById('ipqcConfirmModal'));
 
-    // 讀取當前登入者資訊 (若框架有設定)
-    try {
-        const storedUser = localStorage.getItem('user_session') || localStorage.getItem('currentUser');
-        if (storedUser) {
-            const parsed = JSON.parse(storedUser);
-            if (parsed.nickname || parsed.name) currentUserNickname = parsed.nickname || parsed.name;
-        }
-    } catch(e) { console.log("未讀取到登入快取，使用預設值"); }
+    // 動態預加載 SheetJS CDN 以處理 Excel 匯入出
+    if (!window.XLSX) {
+        const script = document.createElement('script');
+        script.src = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
+        document.head.appendChild(script);
+    }
 
-    // 主表格核心事件綁定
-    document.getElementById('ipqc-search').addEventListener('input', applyMainFilters);
-    document.getElementById('ipqc-date-start').addEventListener('change', applyMainFilters);
-    document.getElementById('ipqc-date-end').addEventListener('change', applyMainFilters);
-    document.getElementById('btn-add-ipqc').addEventListener('click', () => openCrudModal(null));
-    document.getElementById('modal-ipqc-form').addEventListener('submit', handleMainFormSubmit);
-    
-    // Excel 匯入匯出綁定
-    document.getElementById('btn-export-excel').addEventListener('click', exportMainToExcel);
-    document.getElementById('btn-trigger-import').addEventListener('click', () => document.getElementById('ipqc-excel-file').click());
-    document.getElementById('ipqc-excel-file').addEventListener('change', importMainFromExcel);
+    // 綁定主工作台事件監聽
+    document.getElementById('main-search').addEventListener('input', doMainSearch);
+    document.getElementById('main-date-start').addEventListener('change', doMainSearch);
+    document.getElementById('main-date-end').addEventListener('change', doMainSearch);
+    document.getElementById('btn-main-add').addEventListener('click', () => openMainCrud('add'));
+    document.getElementById('btn-main-export').addEventListener('click', exportMainExcel);
+    document.getElementById('main-excel-file').addEventListener('change', (e) => importExcel(e, 'main'));
 
-    // 子視窗連動按鈕與按鈕事件綁定
-    document.getElementById('btn-sub-order').addEventListener('click', () => openSubTableModal('order_list'));
-    document.getElementById('btn-sub-spec').addEventListener('click', () => openSubTableModal('spec_list'));
-    document.getElementById('btn-sub-operator').addEventListener('click', () => openSubTableModal('operator_list'));
-    document.getElementById('btn-sub-defect').addEventListener('click', () => openSubTableModal('defect_list'));
-    document.getElementById('btn-close-sub').addEventListener('click', () => subModalInstance.hide());
-
-    // 子視窗內部操作綁定
-    document.getElementById('sub-search').addEventListener('input', applySubFilters);
-    document.getElementById('btn-sub-add-new').addEventListener('click', toggleSubFormBlock);
-    document.getElementById('btn-sub-form-cancel').addEventListener('click', () => document.getElementById('sub-form-block').classList.add('d-none'));
-    document.getElementById('sub-data-form').addEventListener('submit', handleSubFormSubmit);
-    document.getElementById('btn-sub-export').addEventListener('click', exportSubToExcel);
-    document.getElementById('btn-sub-trigger-import').addEventListener('click', () => document.getElementById('sub-excel-file').click());
-    document.getElementById('sub-excel-file').addEventListener('change', importSubFromExcel);
-
-    // 刪除確認按鈕點擊
-    document.getElementById('btn-confirm-delete').addEventListener('click', () => {
-        if (typeof onDeleteConfirmCallback === 'function') {
-            onDeleteConfirmCallback();
-            confirmModalInstance.hide();
-        }
-    });
-
-    // 逐字補全功能初始化
+    // 綁定主表單提交與自動補全
+    document.getElementById('ipqc-crud-form').addEventListener('submit', handleMainSubmit);
     setupOrderAutocomplete();
 
-    // 載入基本下拉選單選項
-    loadDropdownOptions();
+    // 綁定子表快捷開啟按鈕 (+) 包含全新的規格版本維護按鈕
+    document.getElementById('btn-sub-defect-mgr').addEventListener('click', () => openSubManager('defect_list'));
+    document.getElementById('btn-sub-order-mgr').addEventListener('click', () => openSubManager('order_list'));
+    document.getElementById('btn-sub-operator-mgr').addEventListener('click', () => openSubManager('operator_list'));
+    document.getElementById('btn-sub-spec-mgr').addEventListener('click', () => openSubManager('spec_list'));
 
-    // 載入主表數據
-    fetchMainRecords();
+    // 綁定子工作台內部事件
+    document.getElementById('sub-search').addEventListener('input', doSubSearch);
+    document.getElementById('btn-sub-add-form').addEventListener('click', toggleSubFormAdd);
+    document.getElementById('btn-sub-form-cancel').addEventListener('click', () => document.getElementById('sub-data-form').classList.add('d-none'));
+    document.getElementById('sub-data-form').addEventListener('submit', handleSubSubmit);
+    document.getElementById('btn-sub-export').addEventListener('click', exportSubExcel);
+    document.getElementById('sub-excel-file').addEventListener('change', (e) => importExcel(e, 'sub'));
+
+    // 綁定刪除二次確認執行器
+    document.getElementById('btn-confirm-execute').addEventListener('click', () => {
+        if (confirmCallback) confirmCallback();
+        bsConfirmModal.hide();
+    });
+
+    // 執行初始化異步資料加載
+    await Promise.all([
+        fetchMainRecords(),
+        loadDropdownOptions()
+    ]);
 }
 
 /**
- * 共通提示視窗
+ * 彈窗二次詢問封裝元件
  */
-function showSystemAlert(title, text) {
-    document.getElementById('alertModalTitle').innerText = title;
-    document.getElementById('alertModalBody').innerText = text;
-    alertModalInstance.show();
+function askConfirmation(message, onConfirm) {
+    document.getElementById('confirmModalBodyText').innerText = message;
+    confirmCallback = onConfirm;
+    bsConfirmModal.show();
 }
 
 /**
- * 共通刪除確認視窗
- */
-function showSystemConfirm(text, callback) {
-    document.getElementById('confirmModalBody').innerText = text;
-    onDeleteConfirmCallback = callback;
-    confirmModalInstance.show();
-}
-
-/**
- * 從資料庫撈取主表數據 ipqc_list
+ * 撈取 ipqc_list 所有欄位資料
  */
 async function fetchMainRecords() {
-    const tbody = document.getElementById('ipqc-main-list');
+    const tbody = document.getElementById('ipqc-main-tbody');
     try {
         const supabase = await getSupabase();
-        if (!supabase) throw new Error("資料庫連線失敗");
+        if (!supabase) return;
 
         const { data, error } = await supabase
             .from('ipqc_list')
-            .select('*');
+            .select('*')
+            .order('date', { ascending: false })
+            .order('time', { ascending: false });
 
         if (error) throw error;
-
-        // 依日期與時間進行遞減排序 (由新到舊)
         mainData = data || [];
-        mainData.sort((a, b) => {
-            const dateTimeA = new Date(`${a.date || '1970-01-01'} ${a.time || '00:00'}`);
-            const dateTimeB = new Date(`${b.date || '1970-01-01'} ${b.time || '00:00'}`);
-            return dateTimeB - dateTimeA;
-        });
+        doMainSearch();
 
-        applyMainFilters();
     } catch (err) {
-        console.error(err);
-        tbody.innerHTML = `<tr><td colspan="11" class="text-center text-danger py-4"><i class="bi bi-exclamation-circle me-1"></i> 同步資料庫失敗: ${err.message}</td></tr>`;
+        console.error("讀取資料失敗:", err);
+        tbody.innerHTML = `<tr><td colspan="11" class="text-center text-danger py-4"><i class="bi bi-exclamation-triangle-fill me-1"></i> 同步資料庫失敗 (${err.message})</td></tr>`;
     }
 }
 
 /**
- * 主表格前端組合條件篩選
+ * 主表關鍵字與日期範圍雙向過濾
  */
-function applyMainFilters() {
-    const searchKeyword = document.getElementById('ipqc-search').value.trim().toLowerCase();
-    const startD = document.getElementById('ipqc-date-start').value;
-    const endD = document.getElementById('ipqc-date-end').value;
+function doMainSearch() {
+    const keyword = document.getElementById('main-search').value.toLowerCase().trim();
+    const startDate = document.getElementById('main-date-start').value;
+    const endDate = document.getElementById('main-date-end').value;
 
-    filteredData = mainData.filter(item => {
-        // 關鍵字比對範圍: 工單、品號、品名、巡檢員、不良分類
-        const matchKeyword = !searchKeyword || 
-            (item.order_number && item.order_number.toLowerCase().includes(searchKeyword)) ||
-            (item.product_number && item.product_number.toLowerCase().includes(searchKeyword)) ||
-            (item.product_name && item.product_name.toLowerCase().includes(searchKeyword)) ||
-            (item.inspector && item.inspector.toLowerCase().includes(searchKeyword)) ||
-            (item.defect_classification && item.defect_classification.toLowerCase().includes(searchKeyword));
+    filteredData = mainData.filter(row => {
+        const matchKeyword = !keyword || [
+            row.order_number, row.product_number, row.product_name, row.spec, 
+            row.inspector, row.determination, row.defect_classification, 
+            row.defect_status, row.handling_measures, row.remark
+        ].some(val => String(val || '').toLowerCase().includes(keyword));
 
-        // 日期區間過濾
         let matchDate = true;
-        if (startD && item.date && item.date < startD) matchDate = false;
-        if (endD && item.date && item.date > endD) matchDate = false;
+        if (startDate && row.date < startDate) matchDate = false;
+        if (endDate && row.date > endDate) matchDate = false;
 
         return matchKeyword && matchDate;
     });
 
-    currentPage = 1;
+    mainPage = 1;
     renderMainTable();
 }
 
 /**
- * 渲染主表 Table 與處理特殊換行、Ellipsis、Hover
+ * 渲染主表 Table
  */
 function renderMainTable() {
-    const tbody = document.getElementById('ipqc-main-list');
+    const tbody = document.getElementById('ipqc-main-tbody');
     if (filteredData.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="11" class="text-center text-muted py-4">查無符合條件的巡檢紀錄</td></tr>`;
-        renderPagination(0);
+        tbody.innerHTML = `<tr><td colspan="11" class="text-center text-muted py-4">沒有符合條件的巡檢明細紀錄</td></tr>`;
+        updateMainPagination(0);
         return;
     }
 
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    const endIndex = Math.min(startIndex + itemsPerPage, filteredData.length);
-    const pageItems = filteredData.slice(startIndex, endIndex);
+    const startIdx = (mainPage - 1) * mainPageSize;
+    const endIdx = Math.min(startIdx + mainPageSize, filteredData.length);
+    const pageData = filteredData.slice(startIdx, endIdx);
 
-    let html = '';
-    pageItems.forEach(row => {
-        // 1. 日期時間合併並換行顯示
-        const dateCell = `${row.date || ''}<br><span class="text-muted small">${row.time || ''}</span>`;
+    tbody.innerHTML = pageData.map(row => {
+        const isPass = row.determination === 'PASS';
+        const badgeClass = isPass ? 'bg-success' : 'bg-danger';
         
-        // 2. 品號/品名/規格合併並換行顯示
-        const prodCell = `<div class="fw-bold">${row.product_number || ''}</div>
-                          <div class="small text-secondary text-truncate" style="max-width:180px;">${row.product_name || ''}</div>
-                          <div class="text-muted" style="font-size:0.75rem;">${row.spec || ''}</div>`;
-        
-        // 3. 判定樣式色塊
-        const detBadge = row.determination === 'PASS' ? 'bg-success' : 'bg-danger';
-
-        // 4. 超過10字元截斷並懸浮提示欄位處理助手
-        const renderEllipsis = (text) => {
-            if (!text) return '';
-            if (text.length > 10) {
-                return `<div class="text-ellipsis-10" title="${text}">${text.substring(0,10)}...</div>`;
+        const renderTruncated = (str) => {
+            const txt = str || '';
+            if (txt.length > 10) {
+                return `<div class="text-ellipsis-10" title="${txt.replace(/"/g, '&quot;')}">${txt.substring(0, 10)}...</div>`;
             }
-            return text;
+            return txt;
         };
 
-        html += `
+        return `
             <tr>
-                <td>${dateCell}</td>
-                <td class="fw-medium text-primary">${row.order_number || ''}</td>
-                <td>${prodCell}</td>
+                <td>${row.date || ''}<br><span class="text-muted small">${row.time || ''}</span></td>
+                <td class="fw-bold text-primary">${row.order_number || ''}</td>
+                <td>
+                    <div class="fw-medium">${row.product_number || ''}</div>
+                    <div class="small text-secondary">${row.product_name || ''}</div>
+                    <div class="small text-muted italic">${row.spec || ''}</div>
+                </td>
                 <td>${row.quantity || 0}</td>
                 <td>${row.inspector || ''}</td>
-                <td><span class="badge ${detBadge}">${row.determination || 'PASS'}</span></td>
-                <td><span class="badge bg-light text-dark border">${row.defect_classification || ''}</span></td>
-                <td>${renderEllipsis(row.defect_status)}</td>
-                <td>${renderEllipsis(row.handling_measures)}</td>
-                <td>${renderEllipsis(row.remark)}</td>
+                <td class="text-center"><span class="badge ${badgeClass}">${row.determination}</span></td>
+                <td>${row.defect_classification || ''}</td>
+                <td>${renderTruncated(row.defect_status)}</td>
+                <td>${renderTruncated(row.handling_measures)}</td>
+                <td>${renderTruncated(row.remark)}</td>
                 <td class="text-center">
-                    <button class="btn btn-xs btn-outline-secondary me-1 btn-edit-main" data-id="${row.id}"><i class="bi bi-pencil"></i></button>
-                    <button class="btn btn-xs btn-outline-danger btn-del-main" data-id="${row.id}"><i class="bi bi-trash"></i></button>
+                    <button class="btn btn-xs btn-outline-dark me-1" onclick="window.editMainRecord('${row.id}')"><i class="bi bi-pencil"></i></button>
+                    <button class="btn btn-xs btn-outline-danger" onclick="window.deleteMainRecord('${row.id}')"><i class="bi bi-trash3"></i></button>
                 </td>
             </tr>
         `;
-    });
+    }).join('');
 
-    tbody.innerHTML = html;
-
-    // 更新分頁文字描述資訊
-    document.getElementById('ipqc-page-info').innerText = `共 ${filteredData.length} 筆，第 ${startIndex + 1}~${endIndex} 筆`;
-    renderPagination(filteredData.length);
-
-    // 綁定操作欄位按鈕點擊事件
-    tbody.querySelectorAll('.btn-edit-main').forEach(btn => {
-        btn.addEventListener('click', () => openCrudModal(btn.getAttribute('data-id')));
-    });
-    tbody.querySelectorAll('.btn-del-main').forEach(btn => {
-        btn.addEventListener('click', () => handleMainDelete(btn.getAttribute('data-id')));
-    });
+    updateMainPagination(filteredData.length, startIdx + 1, endIdx);
 }
 
 /**
- * 繪製限定最高 3 頁展現碼的分頁邏輯
+ * 處理主頁碼分頁
  */
-function renderPagination(totalItems) {
-    const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
-    const pagUl = document.getElementById('ipqc-pagination');
-    pagUl.innerHTML = '';
+function updateMainPagination(totalCount, startRange = 0, endRange = 0) {
+    const info = document.getElementById('main-pagination-info');
+    info.innerText = `共 ${totalCount} 筆，第 ${totalCount > 0 ? startRange : 0}~${endRange} 筆`;
 
-    // 計算 3 頁限制範圍碼
-    let startP = Math.max(1, currentPage - 1);
+    const pagesContainer = document.getElementById('main-pagination-pages');
+    pagesContainer.innerHTML = '';
+    if (totalCount === 0) return;
+
+    const totalPages = Math.ceil(totalCount / mainPageSize);
+    let startP = Math.max(1, mainPage - 1);
     let endP = Math.min(totalPages, startP + 2);
-    if (endP - startP < 2 && startP > 1) {
-        startP = Math.max(1, endP - 2);
-    }
+    if (endP - startP < 2) startP = Math.max(1, endP - 2);
 
-    // 上一頁
-    const prevLi = document.createElement('li');
-    prevLi.className = `page-item ${currentPage === 1 ? 'disabled' : ''}`;
-    prevLi.innerHTML = `<a class="page-link" href="javascript:;"><i class="bi bi-chevron-left"></i></a>`;
-    if (currentPage > 1) {
-        prevLi.addEventListener('click', () => { currentPage--; renderMainTable(); });
-    }
-    pagUl.appendChild(prevLi);
-
-    // 頁碼
+    pagesContainer.innerHTML += `<li class="page-item ${mainPage === 1 ? 'disabled' : ''}"><a class="page-link" href="#" data-page="${mainPage - 1}">&laquo;</a></li>`;
     for (let i = startP; i <= endP; i++) {
-        const li = document.createElement('li');
-        li.className = `page-item ${currentPage === i ? 'active' : ''}`;
-        li.innerHTML = `<a class="page-link" href="javascript:;">${i}</a>`;
-        li.addEventListener('click', () => { currentPage = i; renderMainTable(); });
-        pagUl.appendChild(li);
+        pagesContainer.innerHTML += `<li class="page-item ${mainPage === i ? 'active' : ''}"><a class="page-link" href="#" data-page="${i}">${i}</a></li>`;
     }
+    pagesContainer.innerHTML += `<li class="page-item ${mainPage === totalPages ? 'disabled' : ''}"><a class="page-link" href="#" data-page="${mainPage + 1}">&raquo;</a></li>`;
 
-    // 下一頁
-    const nextLi = document.createElement('li');
-    nextLi.className = `page-item ${currentPage === totalPages ? 'disabled' : ''}`;
-    nextLi.innerHTML = `<a class="page-link" href="javascript:;"><i class="bi bi-chevron-right"></i></a>`;
-    if (currentPage < totalPages) {
-        nextLi.addEventListener('click', () => { currentPage++; renderMainTable(); });
-    }
-    pagUl.appendChild(nextLi);
-}
-
-/**
- * 打開新增/編輯主表資料對話框
- */
-async function openCrudModal(id = null) {
-    const form = document.getElementById('modal-ipqc-form');
-    form.reset();
-    document.getElementById('autocomplete-list').classList.add('d-none');
-    
-    // 動態載入並重刷下拉選項以保持跟子資料同步
-    await loadDropdownOptions();
-
-    if (!id) {
-        // 新增模式
-        document.getElementById('crudModalTitle').innerText = "新增巡檢紀錄";
-        document.getElementById('form-id').value = '';
-        
-        // 帶入今日與當前時間預設值
-        const now = new Date();
-        document.getElementById('form-date').value = now.toISOString().split('T')[0];
-        document.getElementById('form-time').value = now.toTimeString().substring(0, 5);
-        
-        // 巡檢員預設為登入者暱稱
-        document.getElementById('form-inspector').value = currentUserNickname;
-    } else {
-        // 編輯模式
-        document.getElementById('crudModalTitle').innerText = "編輯巡檢紀錄";
-        const record = mainData.find(item => item.id == id);
-        if (!record) return;
-
-        document.getElementById('form-id').value = record.id;
-        document.getElementById('form-date').value = record.date || '';
-        document.getElementById('form-time').value = record.time || '';
-        document.getElementById('form-order-number').value = record.order_number || '';
-        document.getElementById('form-product-number').value = record.product_number || '';
-        document.getElementById('form-product-name').value = record.product_name || '';
-        document.getElementById('form-quantity').value = record.quantity || 0;
-        document.getElementById('form-spec').value = record.spec || '';
-        document.getElementById('form-draw-ver').value = record.draw_ver || '';
-        document.getElementById('form-operator').value = record.operator || '';
-        document.getElementById('form-inspector').value = record.inspector || '';
-        document.getElementById('form-determination').value = record.determination || 'PASS';
-        document.getElementById('form-defect-classification').value = record.defect_classification || '';
-        document.getElementById('form-defect-status').value = record.defect_status || '';
-        document.getElementById('form-handling-measures').value = record.handling_measures || '';
-        document.getElementById('form-remark').value = record.remark || '';
-    }
-
-    crudModalInstance.show();
-}
-
-/**
- * 處理主資料表單新增或修改送出
- */
-async function handleMainFormSubmit(e) {
-    e.preventDefault();
-    const id = document.getElementById('form-id').value;
-    
-    const payload = {
-        date: document.getElementById('form-date').value,
-        time: document.getElementById('form-time').value,
-        order_number: document.getElementById('form-order-number').value.trim(),
-        product_number: document.getElementById('form-product-number').value,
-        product_name: document.getElementById('form-product-name').value,
-        quantity: parseInt(document.getElementById('form-quantity').value) || 0,
-        spec: document.getElementById('form-spec').value,
-        draw_ver: document.getElementById('form-draw-ver').value,
-        operator: document.getElementById('form-operator').value,
-        inspector: document.getElementById('form-inspector').value,
-        determination: document.getElementById('form-determination').value,
-        defect_classification: document.getElementById('form-defect-classification').value,
-        defect_status: document.getElementById('form-defect-status').value.trim(),
-        handling_measures: document.getElementById('form-handling-measures').value.trim(),
-        remark: document.getElementById('form-remark').value.trim()
-    };
-
-    try {
-        const supabase = await getSupabase();
-        if (!supabase) throw new Error("資料庫未連接");
-
-        if (!id) {
-            // 新增
-            const { error } = await supabase.from('ipqc_list').insert([payload]);
-            if (error) throw error;
-            showSystemAlert("成功提示", "巡檢紀錄新增成功。");
-        } else {
-            // 更新
-            const { error } = await supabase.from('ipqc_list').update(payload).eq('id', id);
-            if (error) throw error;
-            showSystemAlert("成功提示", "巡檢紀錄已更新完成。");
-        }
-
-        crudModalInstance.hide();
-        fetchMainRecords();
-    } catch (err) {
-        console.error(err);
-        showSystemAlert("系統錯誤", "寫入巡檢紀錄失敗：" + err.message);
-    }
-}
-
-/**
- * 處理主資料表刪除
- */
-function handleMainDelete(id) {
-    showSystemConfirm("您確定要刪除這筆巡檢紀錄嗎？", async () => {
-        try {
-            const supabase = await getSupabase();
-            const { error } = await supabase.from('ipqc_list').delete().eq('id', id);
-            if (error) throw error;
-            showSystemAlert("操作提示", "紀錄刪除成功。");
-            fetchMainRecords();
-        } catch (err) {
-            showSystemAlert("操作失敗", "刪除失敗：" + err.message);
-        }
+    pagesContainer.querySelectorAll('a').forEach(link => {
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            const p = parseInt(e.target.getAttribute('data-page'));
+            if (p >= 1 && p <= totalPages) {
+                mainPage = p;
+                renderMainTable();
+            }
+        });
     });
 }
 
 /**
- * 載入並刷新動態下拉選單數據 (如 operator_list、defect_list)
+ * 加載下拉選單來源
  */
 async function loadDropdownOptions() {
     try {
         const supabase = await getSupabase();
         if (!supabase) return;
 
-        // 1. 作業員選單 (operator_list >> name)
-        const { data: opData } = await supabase.from('operator_list').select('name, department');
-        const opSelect = document.getElementById('form-operator');
-        opSelect.innerHTML = '<option value="">-- 請選擇作業員 --</option>';
+        const { data: opData } = await supabase.from('operator_list').select('*');
+        const opSelect = document.getElementById('field-operator');
+        const insSelect = document.getElementById('field-inspector');
+        
         if (opData) {
-            opData.forEach(o => {
-                opSelect.innerHTML += `<option value="${o.name}">${o.name}</option>`;
-            });
-        }
-
-        // 2. 巡檢員選單 (operator_list >> name 且限制品管課)
-        const insSelect = document.getElementById('form-inspector');
-        insSelect.innerHTML = '<option value="">-- 請選擇巡檢員 --</option>';
-        if (opData) {
+            opSelect.innerHTML = opData.map(o => `<option value="${o.name}">${o.name}</option>`).join('');
             const qcOperators = opData.filter(o => o.department === '正義廠品管課');
-            qcOperators.forEach(o => {
-                insSelect.innerHTML += `<option value="${o.name}">${o.name}</option>`;
-            });
-        }
-        // 如果預設登入者暱稱不在選項內，則動態加入
-        if (currentUserNickname && !opData.some(o => o.name === currentUserNickname && o.department === '正義廠品管課')) {
-            insSelect.innerHTML += `<option value="${currentUserNickname}">${currentUserNickname} (登入者)</option>`;
+            insSelect.innerHTML = qcOperators.map(o => `<option value="${o.name}">${o.name}</option>`).join('');
         }
 
-        // 3. 不良分類選單 (defect_list >> defect_type)
+        insSelect.value = "Leo Wu";
+
         const { data: dfData } = await supabase.from('defect_list').select('defect_type');
-        const dfSelect = document.getElementById('form-defect-classification');
-        dfSelect.innerHTML = '<option value="">-- 無不良狀況 (PASS) --</option>';
+        const dfSelect = document.getElementById('field-defect_classification');
         if (dfData) {
-            // 取重複排除
-            const uniqueTypes = [...new Set(dfData.map(d => d.defect_type).filter(Boolean))];
-            uniqueTypes.forEach(t => {
-                dfSelect.innerHTML += `<option value="${t}">${t}</option>`;
-            });
+            dfSelect.innerHTML = '<option value="">-- 無不良狀況 (合格) --</option>' + 
+                dfData.map(d => `<option value="${d.defect_type}">${d.defect_type}</option>`).join('');
         }
 
     } catch (err) {
-        console.error("載入下拉選單連動失敗", err);
+        console.error("加載對應動態下拉選單失敗:", err);
     }
 }
 
 /**
- * 設置工單欄位自動補全與連動帶入欄位規則
+ * 製令工單自動補全與多表全自動跨表欄位代入
  */
-async function setupOrderAutocomplete() {
-    const input = document.getElementById('form-order-number');
-    const suggestBox = document.getElementById('autocomplete-list');
+function setupOrderAutocomplete() {
+    const input = document.getElementById('field-order_number');
+    const menu = document.getElementById('order-autocomplete-list');
 
     input.addEventListener('input', async () => {
         const val = input.value.trim();
         if (!val) {
-            suggestBox.classList.add('d-none');
+            menu.classList.remove('show');
             return;
         }
 
         try {
             const supabase = await getSupabase();
-            const { data: orders } = await supabase
+            const { data, error } = await supabase
                 .from('order_list')
                 .select('*')
                 .ilike('order_number', `%${val}%`)
-                .limit(8);
+                .limit(5);
 
-            if (!orders || orders.length === 0) {
-                suggestBox.classList.add('d-none');
+            if (error || !data || data.length === 0) {
+                menu.classList.remove('show');
                 return;
             }
 
-            suggestBox.innerHTML = '';
-            orders.forEach(ord => {
-                const item = document.createElement('div');
-                item.className = 'autocomplete-suggestion';
-                item.innerText = `${ord.order_number} (${ord.product_name || ''})`;
-                item.addEventListener('click', async () => {
-                    input.value = ord.order_number;
-                    suggestBox.classList.add('d-none');
-                    
-                    // 自動代入 order_list 對應資訊
-                    document.getElementById('form-product-number').value = ord.product_number || '';
-                    document.getElementById('form-product-name').value = ord.product_name || '';
-                    document.getElementById('form-quantity').value = ord.quantity || 0;
+            menu.innerHTML = data.map(o => `
+                <li><a class="dropdown-item" href="#" data-order="${o.order_number}" data-prod="${o.product_number || ''}" data-name="${o.product_name || ''}" data-qty="${o.quantity || 0}">
+                    📦 工單: <strong>${o.order_number}</strong> | 品名: ${o.product_name || ''}
+                </a></li>
+            `).join('');
+            menu.classList.add('show');
 
-                    // 連動 spec_list 對應資訊
-                    if (ord.product_number) {
-                        const { data: specs } = await supabase
+            menu.querySelectorAll('a').forEach(item => {
+                item.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    const orderNum = item.getAttribute('data-order');
+                    const prodNum = item.getAttribute('data-prod');
+                    const prodName = item.getAttribute('data-name');
+                    const qty = item.getAttribute('data-qty');
+
+                    input.value = orderNum;
+                    document.getElementById('field-product_number').value = prodNum;
+                    document.getElementById('field-product_name').value = prodName;
+                    document.getElementById('field-quantity').value = qty;
+                    menu.classList.remove('show');
+
+                    // 跨表二次聯動：自動去 spec_list 撈取 spec 與 version
+                    if (prodNum) {
+                        const { data: specData } = await supabase
                             .from('spec_list')
                             .select('*')
-                            .eq('product_number', ord.product_number)
+                            .eq('product_number', prodNum)
                             .limit(1);
 
-                        if (specs && specs.length > 0) {
-                            document.getElementById('form-spec').value = specs[0].spec || '';
-                            document.getElementById('form-draw-ver').value = specs[0].version || '';
+                        if (specData && specData.length > 0) {
+                            document.getElementById('field-spec').value = specData[0].spec || '';
+                            document.getElementById('field-draw_ver').value = specData[0].version || '';
                         } else {
-                            document.getElementById('form-spec').value = '';
-                            document.getElementById('form-draw-ver').value = '';
+                            document.getElementById('field-spec').value = '⚠️ 找不到此品號之規格建檔';
+                            document.getElementById('field-draw_ver').value = 'N/A';
                         }
                     }
                 });
-                suggestBox.appendChild(item);
             });
-            suggestBox.classList.remove('d-none');
-        } catch(e) { console.error(e); }
+
+        } catch (err) {
+            console.error("工單即時補全連動發生錯誤:", err);
+        }
     });
 
-    // 點擊空白處關閉自動補全選單
     document.addEventListener('click', (e) => {
-        if (e.target !== input) suggestBox.classList.add('d-none');
+        if (e.target !== input) menu.classList.remove('show');
     });
 }
 
-// ==================== 子模組獨立維護系統 (Sub-Modal CRUD) ====================
+/**
+ * 開啟主表單 Modal
+ */
+function openMainCrud(mode, id = null) {
+    const form = document.getElementById('ipqc-crud-form');
+    form.reset();
+    document.getElementById('field-id').value = '';
+    document.getElementById('ipqcCrudModalTitle').innerText = mode === 'add' ? '新增巡檢紀錄' : '編輯巡檢紀錄';
+    
+    if (mode === 'add') {
+        const now = new Date();
+        document.getElementById('field-date').value = now.toISOString().split('T')[0];
+        document.getElementById('field-time').value = now.toTimeString().substring(0, 5);
+        document.getElementById('field-inspector').value = "Leo Wu"; 
+    }
 
-// 各子表結構欄位定義定義映射
-const SUB_MODULE_SCHEMAS = {
+    if (mode === 'edit' && id) {
+        const row = mainData.find(r => String(r.id) === String(id));
+        if (row) {
+            document.getElementById('field-id').value = row.id;
+            document.getElementById('field-date').value = row.date || '';
+            document.getElementById('field-time').value = row.time || '';
+            document.getElementById('field-order_number').value = row.order_number || '';
+            document.getElementById('field-product_number').value = row.product_number || '';
+            document.getElementById('field-product_name').value = row.product_name || '';
+            document.getElementById('field-quantity').value = row.quantity || 0;
+            document.getElementById('field-spec').value = row.spec || '';
+            document.getElementById('field-draw_ver').value = row.draw_ver || '';
+            document.getElementById('field-operator').value = row.operator || '';
+            document.getElementById('field-inspector').value = row.inspector || 'Leo Wu';
+            document.getElementById('field-determination').value = row.determination || 'PASS';
+            document.getElementById('field-defect_classification').value = row.defect_classification || '';
+            document.getElementById('field-defect_status').value = row.defect_status || '';
+            document.getElementById('field-handling_measures').value = row.handling_measures || '';
+            document.getElementById('field-remark').value = row.remark || '';
+        }
+    }
+    bsMainModal.show();
+}
+window.editMainRecord = (id) => openMainCrud('edit', id);
+
+/**
+ * 提交主表單
+ */
+async function handleMainSubmit(e) {
+    e.preventDefault();
+    const id = document.getElementById('field-id').value;
+    
+    const payload = {
+        date: document.getElementById('field-date').value,
+        time: document.getElementById('field-time').value,
+        order_number: document.getElementById('field-order_number').value.trim(),
+        product_number: document.getElementById('field-product_number').value.trim(),
+        product_name: document.getElementById('field-product_name').value.trim(),
+        quantity: parseInt(document.getElementById('field-quantity').value) || 0,
+        spec: document.getElementById('field-spec').value.trim(),
+        draw_ver: document.getElementById('field-draw_ver').value.trim(),
+        operator: document.getElementById('field-operator').value,
+        inspector: document.getElementById('field-inspector').value,
+        determination: document.getElementById('field-determination').value,
+        defect_classification: document.getElementById('field-defect_classification').value,
+        defect_status: document.getElementById('field-defect_status').value.trim(),
+        handling_measures: document.getElementById('field-handling_measures').value.trim(),
+        remark: document.getElementById('field-remark').value.trim()
+    };
+
+    try {
+        const supabase = await getSupabase();
+        let resError = null;
+
+        if (id) {
+            const { error } = await supabase.from('ipqc_list').update(payload).eq('id', id);
+            resError = error;
+        } else {
+            const { error } = await supabase.from('ipqc_list').insert([payload]);
+            resError = error;
+        }
+
+        bsMainModal.hide();
+        if (resError) throw resError;
+
+        ModalComponent.show("操作成功", "巡檢紀錄明細已成功同步！", "success");
+        await fetchMainRecords();
+
+    } catch (err) {
+        ModalComponent.show("更新失敗", `儲存資料失敗：${err.message}`, "danger");
+    }
+}
+
+/**
+ * 刪除主紀錄
+ */
+window.deleteMainRecord = (id) => {
+    askConfirmation("您確定要刪除這筆製程巡檢紀錄明細嗎？此動作無法復原。", async () => {
+        try {
+            const supabase = await getSupabase();
+            const { error } = await supabase.from('ipqc_list').delete().eq('id', id);
+            if (error) throw error;
+            
+            ModalComponent.show("刪除成功", "紀錄已移除。", "success");
+            await fetchMainRecords();
+        } catch (err) {
+            ModalComponent.show("刪除失敗", err.message, "danger");
+        }
+    });
+};
+
+// ============================================================================
+// ==================== 四個子資料表快捷內建核心工作台 (共用邏輯) ====================
+// ============================================================================
+
+const SUB_CONFIGS = {
     defect_list: {
         title: "不良分類維護 (defect_list)",
-        fields: [
-            { name: "defect_type", label: "不良分類名稱", type: "text", placeholder: "例如: 射出缺陷", required: true },
-            { name: "description", label: "詳細缺陷描述", type: "text", placeholder: "例如: 表面縮水或黑點", required: false }
-        ],
-        headers: ["不良分類名稱", "詳細缺陷描述"]
+        fields: [{ id: "defect_type", label: "不良分類名稱", type: "text", req: true }],
+        headers: ["不良分類名稱"],
+        rowMapper: (r) => `<td>${r.defect_type || ''}</td>`
     },
     order_list: {
-        title: "製令工單清單維護 (order_list)",
+        title: "製令工單維護 (order_list)",
         fields: [
-            { name: "order_number", label: "製令工單號", type: "text", placeholder: "例如: WO-2026", required: true },
-            { name: "product_number", label: "品號", type: "text", placeholder: "例如: PN-990", required: true },
-            { name: "product_name", label: "品名", type: "text", placeholder: "例如: 減震塑膠外殼", required: true },
-            { name: "quantity", label: "製令數量", type: "number", placeholder: "1000", required: true }
+            { id: "order_number", label: "製令工單號", type: "text", req: true },
+            { id: "product_number", label: "品號", type: "text", req: true },
+            { id: "product_name", label: "品名", type: "text", req: true },
+            { id: "quantity", label: "數量", type: "number", req: true }
         ],
-        headers: ["工單號", "品號", "品名", "數量"]
+        headers: ["工單號", "品號", "品名", "數量"],
+        rowMapper: (r) => `<td>${r.order_number || ''}</td><td>${r.product_number || ''}</td><td>${r.product_name || ''}</td><td>${r.quantity || 0}</td>`
     },
     operator_list: {
-        title: "現場作業/巡檢人員維護 (operator_list)",
+        title: "人員清單維護 (operator_list)",
         fields: [
-            { name: "name", label: "人員姓名", type: "text", placeholder: "例如: 王大同", required: true },
-            { name: "department", label: "所屬部門課組", type: "text", placeholder: "例如: 正義廠品管課 / 現場第一組", required: true }
+            { id: "name", label: "姓名", type: "text", req: true },
+            { id: "department", label: "部門名稱", type: "text", req: true }
         ],
-        headers: ["人員姓名", "所屬部門組別"]
+        headers: ["姓名", "部門名稱"],
+        rowMapper: (r) => `<td>${r.name || ''}</td><td>${r.department || ''}</td>`
     },
     spec_list: {
-        title: "產品規格版本維護 (spec_list)",
+        title: "規格版本維護 (spec_list)",
         fields: [
-            { name: "product_number", label: "品號對應", type: "text", placeholder: "例如: PN-990", required: true },
-            { name: "spec", label: "規格描述", type: "text", placeholder: "例如: 45mm x 20mm", required: true },
-            { name: "version", label: "圖面版次", type: "text", placeholder: "例如: Rev.A", required: true }
+            { id: "product_number", label: "品號", type: "text", req: true },
+            { id: "spec", label: "產品規格", type: "text", req: true },
+            { id: "version", label: "版次 (Version)", type: "text", req: true }
         ],
-        headers: ["品號對應", "規格描述", "版次"]
+        headers: ["品號", "規格說明", "版次"],
+        rowMapper: (r) => `<td>${r.product_number || ''}</td><td>${r.spec || ''}</td><td>${r.version || ''}</td>`
     }
 };
 
-/**
- * 開啟子視窗
- */
-async function openSubTableModal(moduleName) {
-    currentSubModule = moduleName;
-    const schema = SUB_MODULE_SCHEMAS[moduleName];
-    document.getElementById('subModalTitle').innerText = schema.title;
+async function openSubManager(tableName) {
+    subCurrentTable = tableName;
+    subPage = 1;
     document.getElementById('sub-search').value = '';
-    document.getElementById('sub-form-block').classList.add('d-none');
+    document.getElementById('sub-data-form').classList.add('d-none');
+    document.getElementById('subManagerModalTitle').innerText = SUB_CONFIGS[tableName].title;
+    
+    const config = SUB_CONFIGS[tableName];
+    const thead = document.getElementById('sub-table-thead');
+    thead.innerHTML = `<tr>${config.headers.map(h => `<th>${h}</th>`).join('')}<th style="width:90px;" class="text-center">操作</th></tr>`;
 
-    // 動態建構子視窗輸入欄位
-    const fieldsContainer = document.getElementById('sub-fields-container');
-    fieldsContainer.innerHTML = '<input type="hidden" id="sub-form-id">';
-    schema.fields.forEach(f => {
-        fieldsContainer.innerHTML += `
-            <div class="${schema.fields.length > 2 ? 'col-md-6' : 'col-md-12'} mb-2">
-                <label class="form-label small fw-bold mb-1">${f.label}</label>
-                <input type="${f.type}" id="sub-field-${f.name}" class="form-control form-control-sm" placeholder="${f.placeholder || ''}" ${f.required ? 'required' : ''}>
-            </div>
-        `;
-    });
-
-    // 動態建構 Table 標頭
-    const thContainer = document.getElementById('sub-table-header');
-    let thHtml = '<tr>';
-    schema.headers.forEach(h => thHtml += `<th>${h}</th>`);
-    thHtml += '<th style="width: 90px;">操作</th></tr>';
-    thContainer.innerHTML = thHtml;
-
-    // 拉取子表資料
-    fetchSubRecords();
-    subModalInstance.show();
+    await fetchSubRecords();
+    bsSubModal.show();
 }
 
-/**
- * 撈取子資料表
- */
 async function fetchSubRecords() {
     try {
         const supabase = await getSupabase();
-        const { data, error } = await supabase.from(currentSubModule).select('*');
+        const { data, error } = await supabase.from(subCurrentTable).select('*');
         if (error) throw error;
         subData = data || [];
-        applySubFilters();
-    } catch (e) {
-        console.error(e);
-        document.getElementById('sub-table-body').innerHTML = `<tr><td colspan="10" class="text-danger">載入子資料失敗</td></tr>`;
+        doSubSearch();
+    } catch (err) {
+        console.error("讀取子表失敗:", err);
     }
 }
 
-function applySubFilters() {
-    const kw = document.getElementById('sub-search').value.trim().toLowerCase();
-    const schema = SUB_MODULE_SCHEMAS[currentSubModule];
-
-    subFilteredData = subData.filter(item => {
-        if (!kw) return true;
-        return schema.fields.some(f => item[f.name] && String(item[f.name]).toLowerCase().includes(kw));
+function doSubSearch() {
+    const kw = document.getElementById('sub-search').value.toLowerCase().trim();
+    const fields = SUB_CONFIGS[subCurrentTable].fields;
+    
+    subFilteredData = subData.filter(row => {
+        return !kw || fields.some(f => String(row[f.id] || '').toLowerCase().includes(kw));
     });
-
-    subCurrentPage = 1;
+    subPage = 1;
     renderSubTable();
 }
 
 function renderSubTable() {
-    const tbody = document.getElementById('sub-table-body');
-    const schema = SUB_MODULE_SCHEMAS[currentSubModule];
+    const tbody = document.getElementById('sub-table-tbody');
+    const config = SUB_CONFIGS[subCurrentTable];
     
     if (subFilteredData.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="${schema.headers.length + 1}" class="text-center text-muted py-3">暫無子資料內容</td></tr>`;
-        document.getElementById('sub-page-info').innerText = '共 0 筆';
-        renderSubPagination(0);
+        tbody.innerHTML = `<tr><td colspan="${config.headers.length + 1}" class="text-center text-muted py-3">無項目資料</td></tr>`;
+        updateSubPagination(0);
         return;
     }
 
-    const start = (subCurrentPage - 1) * subItemsPerPage;
-    const end = Math.min(start + subItemsPerPage, subFilteredData.length);
-    const pageItems = subFilteredData.slice(start, end);
+    const startIdx = (subPage - 1) * subPageSize;
+    const endIdx = Math.min(startIdx + subPageSize, subFilteredData.length);
+    const pageData = subFilteredData.slice(startIdx, endIdx);
 
-    let html = '';
-    pageItems.forEach(row => {
-        html += '<tr>';
-        schema.fields.forEach(f => {
-            html += `<td>${row[f.name] !== undefined ? row[f.name] : ''}</td>`;
-        });
-        html += `
-            <td>
-                <button class="btn btn-xs btn-outline-secondary py-0 px-1 btn-edit-sub" data-id="${row.id}"><i class="bi bi-pencil"></i></button>
-                <button class="btn btn-xs btn-outline-danger py-0 px-1 btn-del-sub" data-id="${row.id}"><i class="bi bi-trash"></i></button>
+    tbody.innerHTML = pageData.map(row => `
+        <tr>
+            ${config.rowMapper(row)}
+            <td class="text-center">
+                <button class="btn btn-xs btn-outline-secondary me-1" type="button" onclick="window.editSubRecord('${row.id}')"><i class="bi bi-pencil"></i></button>
+                <button class="btn btn-xs btn-outline-danger" type="button" onclick="window.deleteSubRecord('${row.id}')"><i class="bi bi-trash3"></i></button>
             </td>
-        </tr>`;
-    });
-    tbody.innerHTML = html;
+        </tr>
+    `).join('');
 
-    document.getElementById('sub-page-info').innerText = `共 ${subFilteredData.length} 筆，第 ${start+1}~${end} 筆`;
-    renderSubPagination(subFilteredData.length);
+    updateSubPagination(subFilteredData.length, startIdx + 1, endIdx);
+}
 
-    // 綁定子視窗編輯與刪除
-    tbody.querySelectorAll('.btn-edit-sub').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const id = btn.getAttribute('data-id');
-            const record = subData.find(r => r.id == id);
-            if (!record) return;
-            document.getElementById('sub-form-id').value = record.id;
-            schema.fields.forEach(f => {
-                document.getElementById(`sub-field-${f.name}`).value = record[f.name] || '';
-            });
-            document.getElementById('sub-form-block').classList.remove('d-none');
+function updateSubPagination(totalCount, startRange = 0, endRange = 0) {
+    const info = document.getElementById('sub-pagination-info');
+    info.innerText = `共 ${totalCount} 筆，第 ${totalCount > 0 ? startRange : 0}~${endRange} 筆`;
+    const pagesContainer = document.getElementById('sub-pagination-pages');
+    pagesContainer.innerHTML = '';
+    if (totalCount === 0) return;
+
+    const totalPages = Math.ceil(totalCount / subPageSize);
+    let startP = Math.max(1, subPage - 1);
+    let endP = Math.min(totalPages, startP + 2);
+    if (endP - startP < 2) startP = Math.max(1, endP - 2);
+
+    pagesContainer.innerHTML += `<li class="page-item ${subPage === 1 ? 'disabled' : ''}"><a class="page-link py-0 px-2" href="#" data-sp="${subPage - 1}">&laquo;</a></li>`;
+    for (let i = startP; i <= endP; i++) {
+        pagesContainer.innerHTML += `<li class="page-item ${subPage === i ? 'active' : ''}"><a class="page-link py-0 px-2" href="#" data-sp="${i}">${i}</a></li>`;
+    }
+    pagesContainer.innerHTML += `<li class="page-item ${subPage === totalPages ? 'disabled' : ''}"><a class="page-link py-0 px-2" href="#" data-sp="${subPage + 1}">&raquo;</a></li>`;
+
+    pagesContainer.querySelectorAll('a').forEach(link => {
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            const p = parseInt(e.target.getAttribute('data-sp'));
+            if (p >= 1 && p <= totalPages) {
+                subPage = p;
+                renderSubTable();
+            }
         });
     });
-
-    tbody.querySelectorAll('.btn-del-sub').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const id = btn.getAttribute('data-id');
-            showSystemConfirm("確定要刪除此子項數據嗎？將連動影響主表選擇。", async () => {
-                try {
-                    const supabase = await getSupabase();
-                    await supabase.from(currentSubModule).delete().eq('id', id);
-                    fetchSubRecords();
-                } catch(e) { showSystemAlert("錯誤", "刪除失敗"); }
-            });
-        });
-    });
 }
 
-function renderSubPagination(totalItems) {
-    const totalPages = Math.ceil(totalItems / subItemsPerPage) || 1;
-    const ul = document.getElementById('sub-pagination');
-    ul.innerHTML = '';
-    for (let i = 1; i <= totalPages; i++) {
-        const li = document.createElement('li');
-        li.className = `page-item ${subCurrentPage === i ? 'active' : ''}`;
-        li.innerHTML = `<a class="page-link" href="javascript:;">${i}</a>`;
-        li.addEventListener('click', () => { subCurrentPage = i; renderSubTable(); });
-        ul.appendChild(li);
-    }
+function toggleSubFormAdd() {
+    subFormMode = 'add';
+    document.getElementById('sub-form-title').innerText = "新增項目內容";
+    document.getElementById('sub-field-id').value = '';
+    buildSubFormFields();
+    document.getElementById('sub-data-form').classList.remove('d-none');
 }
 
-function toggleSubFormBlock() {
-    const block = document.getElementById('sub-form-block');
-    if (block.classList.contains('d-none')) {
-        document.getElementById('sub-data-form').reset();
-        document.getElementById('sub-form-id').value = '';
-        block.classList.remove('d-none');
-    } else {
-        block.classList.add('d-none');
-    }
+window.editSubRecord = (id) => {
+    subFormMode = 'edit';
+    document.getElementById('sub-form-title').innerText = "編輯項目內容";
+    const row = subData.find(r => String(r.id) === String(id));
+    if (!row) return;
+
+    document.getElementById('sub-field-id').value = row.id;
+    buildSubFormFields(row);
+    document.getElementById('sub-data-form').classList.remove('d-none');
+};
+
+function buildSubFormFields(rowData = null) {
+    const container = document.getElementById('sub-form-fields-container');
+    const fields = SUB_CONFIGS[subCurrentTable].fields;
+
+    container.innerHTML = fields.map(f => {
+        const val = rowData ? (rowData[f.id] || '') : '';
+        return `
+            <div class="col">
+                <label class="form-label mb-0 small text-muted">${f.label}</label>
+                <input type="${f.type}" id="sub-input-${f.id}" class="form-control form-control-sm" value="${val}" ${f.req ? 'required' : ''}>
+            </div>
+        `;
+    }).join('');
 }
 
-async function handleSubFormSubmit(e) {
+async function handleSubSubmit(e) {
     e.preventDefault();
-    const id = document.getElementById('sub-form-id').value;
-    const schema = SUB_MODULE_SCHEMAS[currentSubModule];
+    const id = document.getElementById('sub-field-id').value;
+    const fields = SUB_CONFIGS[subCurrentTable].fields;
     const payload = {};
-    schema.fields.forEach(f => {
-        const val = document.getElementById(`sub-field-${f.name}`).value;
-        payload[f.name] = f.type === 'number' ? parseInt(val) : val.trim();
+    
+    fields.forEach(f => {
+        const input = document.getElementById(`sub-input-${f.id}`);
+        payload[f.id] = f.type === 'number' ? (parseInt(input.value) || 0) : input.value.trim();
     });
 
     try {
         const supabase = await getSupabase();
-        if (!id) {
-            await supabase.from(currentSubModule).insert([payload]);
+        let err = null;
+        if (subFormMode === 'edit' && id) {
+            const { error } = await supabase.from(subCurrentTable).update(payload).eq('id', id);
+            err = error;
         } else {
-            await supabase.from(currentSubModule).update(payload).eq('id', id);
+            const { error } = await supabase.from(subCurrentTable).insert([payload]);
+            err = error;
         }
-        document.getElementById('sub-form-block').classList.add('d-none');
-        fetchSubRecords();
-    } catch(err) {
-        showSystemAlert("錯誤", "儲存子資料失敗");
+
+        if (err) throw err;
+        
+        document.getElementById('sub-data-form').classList.add('d-none');
+        ModalComponent.show("子表更新成功", "關聯項目已同步！", "success");
+        await fetchSubRecords();
+        await loadDropdownOptions();
+
+    } catch (err) {
+        ModalComponent.show("更新失敗", err.message, "danger");
     }
 }
 
-// ==================== Excel 匯入/匯出擴充模擬 (相容純前端/SheetJS庫) ====================
-
-function exportMainToExcel() {
-    if(filteredData.length === 0) { showSystemAlert("提示", "目前沒有資料可供匯出。"); return; }
-    let csvContent = "\uFEFF日期,時間,製令工單,品號,品名,規格,數量,巡檢員,判定,不良分類,不良狀況,處置措施,備註\n";
-    filteredData.forEach(r => {
-        csvContent += `"${r.date||''}","${r.time||''}","${r.order_number||''}","${r.product_number||''}","${r.product_name||''}","${r.spec||''}",${r.quantity||0},"${r.inspector||''}","${r.determination||''}","${r.defect_classification||''}","${r.defect_status||''}","${r.handling_measures||''}","${r.remark||''}"\n`;
+window.deleteSubRecord = (id) => {
+    askConfirmation("您確定要刪除這筆項目資料嗎？", async () => {
+        try {
+            const supabase = await getSupabase();
+            const { error } = await supabase.from(subCurrentTable).delete().eq('id', id);
+            if (error) throw error;
+            
+            ModalComponent.show("項目刪除成功", "資料已自子資料表清除。", "success");
+            await fetchSubRecords();
+            await loadDropdownOptions();
+        } catch (err) {
+            ModalComponent.show("刪除失敗", "該項目已被巡檢明細表或工單參考參照，拒絕刪除。", "danger");
+        }
     });
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.setAttribute("download", `IPQC_製程巡檢紀錄明細_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+};
+
+// ============================================================================
+// ==================== 整合 SheetJS Excel 匯入與匯出處理邏輯 ====================
+// ============================================================================
+
+function exportMainExcel() {
+    if (!window.XLSX) return;
+    const wb = XLSX.utils.book_new();
+    const cleanRows = filteredData.map(({ id, ...rest }) => rest);
+    const ws = XLSX.utils.json_to_sheet(cleanRows);
+    XLSX.utils.book_append_sheet(wb, ws, "IPQC主資料");
+    XLSX.writeFile(wb, `IPQC_巡檢紀錄_${new Date().toISOString().split('T')[0]}.xlsx`);
 }
 
-function importMainFromExcel(e) {
-    showSystemAlert("系統提示", "已選取明細檔案，正在進行格式剖析與批次併入資料庫...");
-    setTimeout(() => { fetchMainRecords(); }, 1500);
+function exportSubExcel() {
+    if (!window.XLSX) return;
+    const wb = XLSX.utils.book_new();
+    const cleanRows = subFilteredData.map(({ id, ...rest }) => rest);
+    const ws = XLSX.utils.json_to_sheet(cleanRows);
+    XLSX.utils.book_append_sheet(wb, ws, "子表數據");
+    XLSX.writeFile(wb, `Backup_${subCurrentTable}.xlsx`);
 }
 
-function exportSubToExcel() {
-    showSystemAlert("系統提示", "子模組備份備份資料庫成功導出。");
-}
+function importExcel(e, targetType) {
+    const file = e.target.files[0];
+    if (!file) return;
 
-function importSubFromExcel() {
-    showSystemAlert("系統提示", "子模組批量匯入完成。");
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+        try {
+            const data = new Uint8Array(evt.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const ws = workbook.Sheets[workbook.SheetNames[0]];
+            const json = XLSX.utils.sheet_to_json(ws);
+
+            if (json.length === 0) {
+                ModalComponent.show("匯入失敗", "未發現有效數據 rows", "danger");
+                return;
+            }
+
+            const supabase = await getSupabase();
+            const targetTable = targetType === 'main' ? 'ipqc_list' : subCurrentTable;
+            
+            const { error } = await supabase.from(targetTable).insert(json);
+            if (error) throw error;
+
+            ModalComponent.show("匯入成功", `成功從 Excel 匯入 ${json.length} 筆資料！`, "success");
+            
+            if (targetType === 'main') {
+                await fetchMainRecords();
+            } else {
+                await fetchSubRecords();
+                await loadDropdownOptions();
+            }
+
+        } catch (err) {
+            ModalComponent.show("匯入解析錯誤", `請確認欄位格式：${err.message}`, "danger");
+        }
+        e.target.value = '';
+    };
+    reader.readAsArrayBuffer(file);
 }
