@@ -624,6 +624,9 @@ async function handleSubSubmit(e) {
         payload[f.id] = f.type === 'number' ? (parseInt(input.value) || 0) : input.value.trim();
     });
 
+    // ✨ 加上這行進行測試
+    console.log("準備送出至 Supabase 的資料內容：", payload);
+    
     try {
         const supabase = await getSupabase();
         let err = null;
