@@ -1,0 +1,19 @@
+/* assets/css/global.css */
+:root {
+    --bs-body-font-family: 'Roboto', 'Noto Sans TC', sans-serif;
+}
+
+body {
+    font-family: var(--bs-body-font-family);
+    background-color: #f8f9fa;
+    overflow-x: hidden;
+}
+
+/* 讓側邊欄與主要內容平鋪 */
+#wrapper {
+    min-height: 100vh;
+}
+
+#page-content-wrapper {
+    min-width: 0;
+}

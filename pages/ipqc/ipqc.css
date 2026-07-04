@@ -1,0 +1,75 @@
+/* IPQC 模組專屬進階視覺與佈局樣式 */
+#main-ipqc-table th {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: #495057;
+    background-color: #f8f9fa;
+    border-bottom: 2px solid #dee2e6;
+}
+
+#main-ipqc-table td {
+    font-size: 0.88rem;
+    color: #333333;
+}
+
+/* 10個字元以上以...顯示，並在懸浮時呈現完整內容 */
+.text-ellipsis-10 {
+    max-width: 120px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: help;
+}
+
+/* 逐字自動補全下拉選單樣式 */
+.autocomplete-suggestions {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 1050;
+    background: #ffffff;
+    border: 1px solid #ced4da;
+    border-radius: 0.25rem;
+    max-height: 200px;
+    overflow-y: auto;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.autocomplete-suggestion {
+    padding: 8px 12px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    border-bottom: 1px solid #f1f3f5;
+}
+
+.autocomplete-suggestion:last-child {
+    border-bottom: none;
+}
+
+.autocomplete-suggestion:hover {
+    background-color: #e9ecef;
+    color: #0d6efd;
+}
+
+/* 迷你按鈕規格，適用於子視窗 */
+.btn-xs {
+    padding: 0.25rem 0.4rem;
+    font-size: 0.75rem;
+    border-radius: 0.2rem;
+}
+
+.pagination-xs .page-link {
+    padding: 0.2rem 0.4rem;
+    font-size: 0.75rem;
+}
+
+/* 標題與輸入框適中字體設定 */
+#crudModal .form-label {
+    margin-bottom: 0.3rem;
+    color: #495057;
+}
+
+#crudModal .form-control, #crudModal .form-select {
+    font-size: 0.875rem;
+}
